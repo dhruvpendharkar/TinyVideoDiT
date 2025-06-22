@@ -76,7 +76,7 @@ class VideoDiT(nn.Module):
     self.output_layer = nn.Linear(self.embedding_size, self.channels * self.patch_size[0] * self.patch_size[1] * self.patch_size[2])
     self.time_embedding = nn.Linear(self.embedding_size, self.embedding_size)
 
-  def forward(self, video, timesteps):
+  def forward(self, video, timesteps, first_frame):
     b, t, h, w, c = video.shape
     patches = patchify_video(video, self.patch_size)
     x = self.patch_embedding(patches)
@@ -87,13 +87,12 @@ class VideoDiT(nn.Module):
     time_enc = self.time_embedding(time_enc)
     x_enc = x_enc + time_enc.unsqueeze(1)
 
-    conditioning_image = video[:, 0, :, :, :]
+    conditioning_image = first_frame
     cond_image_patches = patchify_image(conditioning_image, self.patch_size)
     num_cond_image_patches = cond_image_patches.shape[1]
     cond_image_pos = sine_encoding(num_cond_image_patches, self.embedding_size).to(x_enc.device)
     cond_image_enc = self.condition_embedding(cond_image_patches) + cond_image_pos.unsqueeze(0)
-    print("cond_image_enc shape:", cond_image_enc.shape)
-    print("x_enc shape:", x_enc.shape)
+    
     x_enc = torch.cat([cond_image_enc, x_enc], dim=1)
     x_trans = self.transformer_layers(x_enc)
     x_trans = x_trans[:, cond_image_enc.shape[1]:]
