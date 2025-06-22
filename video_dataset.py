@@ -2,6 +2,7 @@ import os
 import cv2
 import torch
 from torch.utils.data import Dataset
+import numpy as np
 
 class VideoDataset(Dataset):
     def __init__(self, folder_path, num_videos=1000, transform=None):
@@ -16,6 +17,7 @@ class VideoDataset(Dataset):
     def __getitem__(self, idx):
         video_path = os.path.join(self.folder_path, self.video_files[idx])
         video = self.load_video(video_path)
+        video = video.float() / 255.0
         
         if self.transform:
             video = self.transform(video)
@@ -31,5 +33,6 @@ class VideoDataset(Dataset):
                 break
             frames.append(frame)
         cap.release()
-        return torch.tensor(frames)
+        frames = np.stack(frames, axis=0)
+        return torch.from_numpy(frames)
 
