@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import tqdm.tqdm as tqdm
+import tqdm as tqdm
 import torch.optim as optim
 
 def beta_schedule(T, init_beta=1e-4, final_beta=1e-2):
@@ -21,7 +21,7 @@ def unpatchify_video(patched_video, patch_size=(2, 8, 8), frames=16, resolution=
 
     resh = patched_video.view(b, num_t, num_h, num_w, pt, ph, pw, c)
     permuted = resh.permute(0, 1, 4, 2, 5, 3, 6, 7).contiguous()
-    unpatchified = permuted.view(b, num_t * pt, num_h * ph, num_w, pw, c)
+    unpatchified = permuted.view(b, num_t * pt, num_h * ph, num_w * pw, c)
     return unpatchified
 
 
@@ -37,27 +37,27 @@ def train_video_dit(model, train_dataloader, val_dataloader, num_epochs=10, T=10
     alphas = alphas.to(device)
     alphas_cum = alphas_cum.to(device)
 
-    for epoch in range(epochs):
+    for epoch in range(num_epochs):
         epoch_loss = 0.0
-        pbar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}")
-        for batch in pbar:
-            batch = batch.to(device)
-            batch_size = batch.shape[0]
-            t = torch.randint(0, T, (batch_size,), device=device)
-            noise = torch.randn_like(batch, device=device)
-            curr_alphas_cum = alphas_cum[t].view(batch_size, 1, 1, 1, 1)
-            sqrt_term = torch.sqrt(curr_alphas_cum)
-            sqrt_alt_term = torch.sqrt(1. - curr_alphas_cum)
-            batch_t = sqrt_term * batch + sqrt_alt_term * noise
-            pred_noise_patchified = model(batch_t, t)
-            pred_noise = unpatchify_video(pred_noise_patchified)
-
-            loss = loss_fn(pred_noise, noise)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-            pbar.set_postfix(loss=loss.item())
+        with tqdm.tqdm(total=len(train_dataloader), desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch") as pbar:
+            for batch in train_dataloader:
+                batch = batch.to(device).float()
+                batch_size = batch.shape[0]
+                first_frames = batch[:, 0, :, :, :]
+                t = torch.randint(0, T, (batch_size,), device=device)
+                noise = torch.randn_like(batch, device=device)
+                curr_alphas_cum = alphas_cum[t].view(batch_size, 1, 1, 1, 1)
+                sqrt_term = torch.sqrt(curr_alphas_cum)
+                sqrt_alt_term = torch.sqrt(1. - curr_alphas_cum)
+                batch_t = sqrt_term * batch + sqrt_alt_term * noise
+                pred_noise_patchified = model(batch_t, t, first_frames)
+                pred_noise = unpatchify_video(pred_noise_patchified)
+                loss = loss_fn(pred_noise, noise)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+                pbar.update(1)
         print(f"Epoch {epoch + 1} loss: {epoch_loss / len(train_dataloader)}")
     
     print("Finished training!")
